@@ -1,0 +1,17 @@
+{
+  "name": "mealcrafter",
+  "version": "1.0.0",
+  "description": "Meal planning app with recipe management",
+  "scripts": {
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && python main.py",
+    "frontend": "cd frontend && npm start",
+    "install-all": "cd frontend && npm install",
+    "db:up": "docker-compose up -d",
+    "db:down": "docker-compose down",
+    "db:reset": "docker-compose down -v && docker-compose up -d"
+  },
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}
