@@ -22,6 +22,7 @@ class Recipe(Base):
     cook_time_minutes = Column(Integer, nullable=True)
     servings = Column(Integer, nullable=True)
     nutrition_data = Column(JSON, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

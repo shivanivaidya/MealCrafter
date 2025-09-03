@@ -11,6 +11,7 @@ from app.core.security import get_current_user
 from app.services.recipe_parser_ai import AIRecipeParser
 from app.services.nutrition_ai import AINutritionCalculator
 from app.services.health_analyzer_ai import AIHealthAnalyzer
+from app.services.url_scraper import URLRecipeScraper
 
 router = APIRouter()
 
@@ -25,9 +26,31 @@ async def create_recipe(
     ai_nutrition = AINutritionCalculator()
     ai_health_analyzer = AIHealthAnalyzer()
     
+    # Check if input is a URL
+    recipe_text = recipe.raw_text.strip()
+    url_title = None
+    image_url = None
+    if recipe_text.startswith(('http://', 'https://', 'www.')):
+        # It's a URL, scrape it first
+        url_scraper = URLRecipeScraper()
+        try:
+            scraped_data = url_scraper.scrape_recipe(recipe_text)
+            recipe_text = scraped_data['text']
+            # Extract title from scraped data if available
+            if scraped_data.get('structured_data') and scraped_data['structured_data'].get('title'):
+                url_title = scraped_data['structured_data']['title']
+            # Extract image URL if available
+            image_url = scraped_data.get('image_url')
+            print(f"Successfully scraped recipe from URL. Title: {url_title}, Image: {image_url}")
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to fetch recipe from URL: {str(e)}"
+            )
+    
     try:
-        # Parse recipe with AI
-        parsed = ai_parser.parse_recipe_text(recipe.raw_text)
+        # Parse recipe with AI (either from URL or direct text)
+        parsed = ai_parser.parse_recipe_text(recipe_text)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -58,9 +81,12 @@ async def create_recipe(
     final_cuisine = recipe.cuisine_type or parsed.cuisine_type
     final_dietary_tags = recipe.dietary_tags if recipe.dietary_tags else parsed.dietary_tags
     
+    # Prioritize URL title, then user-provided title, then AI-parsed title
+    final_title = url_title or recipe.title or parsed.title
+    
     db_recipe = Recipe(
         user_id=current_user.id,
-        title=recipe.title or parsed.title,
+        title=final_title,
         raw_text=recipe.raw_text,
         ingredients=parsed.ingredients,
         instructions=parsed.instructions,
@@ -72,7 +98,8 @@ async def create_recipe(
         prep_time_minutes=recipe.prep_time_minutes,
         cook_time_minutes=recipe.cook_time_minutes,
         servings=parsed.servings,
-        nutrition_data=nutrition_data
+        nutrition_data=nutrition_data,
+        image_url=image_url
     )
     
     db.add(db_recipe)

@@ -284,6 +284,21 @@ const RecipeDetail: React.FC = () => {
         )}
 
         <div className="bg-white rounded-lg shadow-md p-6">
+          {/* Recipe Image */}
+          {recipe.image_url && (
+            <div className="mb-6 rounded-lg overflow-hidden">
+              <img 
+                src={recipe.image_url} 
+                alt={recipe.title}
+                className="w-full h-96 object-cover rounded-lg shadow-md"
+                onError={(e) => {
+                  // Hide image if it fails to load
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            </div>
+          )}
+
           {/* 1. Recipe Name */}
           <div className="flex justify-between items-start mb-6">
             <h1 className="text-3xl font-bold text-gray-900">{recipe.title}</h1>

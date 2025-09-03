@@ -22,6 +22,7 @@ export interface Recipe {
   cook_time_minutes?: number;
   servings?: number;
   nutrition_data?: NutritionData;
+  image_url?: string;
   created_at: string;
 }
 

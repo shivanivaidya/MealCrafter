@@ -7,11 +7,13 @@ const RecipeForm: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [inputType, setInputType] = useState<'text' | 'url'>('text');
   const [selectedCuisine, setSelectedCuisine] = useState('');
   const [selectedDietaryTags, setSelectedDietaryTags] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     raw_text: '',
+    recipe_url: '',
     prep_time_minutes: '',
     cook_time_minutes: '',
     servings: '',
@@ -46,9 +48,18 @@ const RecipeForm: React.FC = () => {
     setLoading(true);
 
     try {
+      // Use URL if in URL mode, otherwise use text
+      const recipeText = inputType === 'url' ? formData.recipe_url : formData.raw_text;
+      
+      if (!recipeText) {
+        setError(inputType === 'url' ? 'Please enter a recipe URL' : 'Please enter recipe text');
+        setLoading(false);
+        return;
+      }
+
       const recipeData = {
         title: formData.title,
-        raw_text: formData.raw_text,
+        raw_text: recipeText, // Backend will detect if it's a URL
         cuisine_type: selectedCuisine || undefined,
         dietary_tags: selectedDietaryTags.length > 0 ? selectedDietaryTags : undefined,
         prep_time_minutes: formData.prep_time_minutes ? parseInt(formData.prep_time_minutes) : undefined,
@@ -105,35 +116,82 @@ Serves: 4`;
 
           <div>
             <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-              Recipe Title
+              Recipe Title {inputType === 'url' && <span className="text-gray-500 font-normal">(optional - will be extracted from URL)</span>}
             </label>
             <input
               type="text"
               id="title"
-              required
+              required={inputType === 'text'}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="e.g., Spaghetti Carbonara"
+              placeholder={inputType === 'url' ? "Leave blank to use title from website" : "e.g., Spaghetti Carbonara"}
             />
           </div>
 
           <div>
-            <label htmlFor="raw_text" className="block text-sm font-medium text-gray-700">
-              Recipe Text
-            </label>
-            <textarea
-              id="raw_text"
-              required
-              rows={15}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
-              value={formData.raw_text}
-              onChange={(e) => setFormData({ ...formData, raw_text: e.target.value })}
-              placeholder={sampleRecipe}
-            />
-            <p className="mt-2 text-sm text-gray-500">
-              Include ingredients list and cooking instructions. The system will parse this automatically.
-            </p>
+            <div className="flex items-center space-x-4 mb-4">
+              <button
+                type="button"
+                onClick={() => setInputType('text')}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  inputType === 'text'
+                    ? 'bg-green-600 text-white shadow-md'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                📝 Enter Recipe Text
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputType('url')}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  inputType === 'url'
+                    ? 'bg-green-600 text-white shadow-md'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                🔗 Import from URL
+              </button>
+            </div>
+
+            {inputType === 'text' ? (
+              <>
+                <label htmlFor="raw_text" className="block text-sm font-medium text-gray-700">
+                  Recipe Text
+                </label>
+                <textarea
+                  id="raw_text"
+                  required={inputType === 'text'}
+                  rows={15}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
+                  value={formData.raw_text}
+                  onChange={(e) => setFormData({ ...formData, raw_text: e.target.value })}
+                  placeholder={sampleRecipe}
+                />
+                <p className="mt-2 text-sm text-gray-500">
+                  Include ingredients list and cooking instructions. The system will parse this automatically.
+                </p>
+              </>
+            ) : (
+              <>
+                <label htmlFor="recipe_url" className="block text-sm font-medium text-gray-700">
+                  Recipe URL
+                </label>
+                <input
+                  type="url"
+                  id="recipe_url"
+                  required={inputType === 'url'}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
+                  value={formData.recipe_url}
+                  onChange={(e) => setFormData({ ...formData, recipe_url: e.target.value })}
+                  placeholder="https://www.example.com/recipe-page"
+                />
+                <p className="mt-2 text-sm text-gray-500">
+                  Paste a URL from any recipe website. We'll automatically extract and analyze the recipe.
+                </p>
+              </>
+            )}
           </div>
 
           <div>
@@ -245,7 +303,7 @@ Serves: 4`;
               disabled={loading}
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
             >
-              {loading ? 'Creating...' : 'Create Recipe'}
+              {loading ? (inputType === 'url' ? 'Fetching & Analyzing...' : 'Creating...') : 'Create Recipe'}
             </button>
           </div>
         </form>

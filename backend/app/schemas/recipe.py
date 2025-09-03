@@ -31,6 +31,7 @@ class RecipeResponse(RecipeBase):
     health_breakdown: Optional[str] = None
     taste_rating: Optional[float]
     nutrition_data: Optional[Dict[str, Any]]
+    image_url: Optional[str] = None
     created_at: datetime
     
     class Config:

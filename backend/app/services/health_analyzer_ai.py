@@ -3,6 +3,7 @@ from openai import OpenAI
 from app.core.config import settings
 import json
 import re
+import ast
 
 class AIHealthAnalyzer:
     def __init__(self):
@@ -129,6 +130,8 @@ Important guidelines:
 - Scores: 8-10 = very healthy, 6-8 = healthy with minor concerns, 4-6 = moderate, below 4 = needs improvement
 - Format all sections with bullet points for consistency
 - For Indian recipes, appreciate the use of spices and traditional healthy ingredients
+- CRITICAL: improvement_tips MUST be an array of plain strings, NOT objects. Each tip should be a simple string like "Reduce oil to 1 tablespoon"
+- CRITICAL: meal_pairing_suggestions MUST be an array of plain strings, NOT objects. Each suggestion should be a simple string like "Pair with whole wheat roti"
 - CRITICAL: Return ONLY valid JSON, no additional text or explanations outside the JSON structure
 """
         
@@ -276,7 +279,9 @@ Important guidelines:
         if tips:
             breakdown += "### 💡 Tips to Make It Healthier\n\n"
             for tip in tips[:5]:  # Top 5 tips
-                breakdown += f"• {tip}\n"
+                tip_text = self._extract_text_from_item(tip, ['tip', 'description'])
+                if tip_text:
+                    breakdown += f"• {tip_text}\n"
             breakdown += "\n"
         
         # Meal pairing suggestions
@@ -284,10 +289,57 @@ Important guidelines:
         if pairings:
             breakdown += "### 🥘 Suggested Pairings\n\n"
             for pairing in pairings[:3]:  # Top 3 pairings
-                breakdown += f"• {pairing}\n"
+                pairing_text = self._extract_text_from_item(pairing, ['suggestion', 'pairing', 'description'])
+                if pairing_text:
+                    breakdown += f"• {pairing_text}\n"
             breakdown += "\n"
         
         return breakdown
+    
+    def _extract_text_from_item(self, item: Any, keys: List[str]) -> str:
+        """Extract text from an item that could be a string, dict, or string representation of dict"""
+        
+        # If it's already a clean string
+        if isinstance(item, str):
+            # Check if it's a string representation of a dictionary
+            if item.startswith("{") and item.endswith("}"):
+                try:
+                    # Try to parse it as a dictionary
+                    parsed = ast.literal_eval(item)
+                    if isinstance(parsed, dict):
+                        # Extract the value from known keys
+                        for key in keys:
+                            if key in parsed:
+                                return str(parsed[key])
+                        # If no known key, get the first value
+                        if parsed:
+                            return str(list(parsed.values())[0])
+                except (ValueError, SyntaxError):
+                    # If parsing fails, clean up the string manually
+                    # Look for patterns like {'tip': 'actual text'}
+                    for key in keys:
+                        pattern = f"'{key}':\\s*'([^']+)'"
+                        match = re.search(pattern, item)
+                        if match:
+                            return match.group(1)
+                    # Fallback: remove dictionary formatting
+                    item = re.sub(r"^\{['\"]?\w+['\"]?:\s*['\"]?", "", item)
+                    item = re.sub(r"['\"]?\}$", "", item)
+                    return item.strip("'\"")
+            return item
+        
+        # If it's a dictionary
+        elif isinstance(item, dict):
+            # Extract the value from known keys
+            for key in keys:
+                if key in item:
+                    return str(item[key])
+            # If no known key, get the first value
+            if item:
+                return str(list(item.values())[0])
+        
+        # Fallback to string conversion
+        return str(item)
     
     def _basic_analysis(self, recipe_data: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback basic analysis when AI is not available"""
