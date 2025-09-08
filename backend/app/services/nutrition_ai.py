@@ -3,6 +3,9 @@ from openai import OpenAI
 from app.core.config import settings
 import json
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AINutritionCalculator:
     def __init__(self):
@@ -36,27 +39,36 @@ Ingredients:
 
 Servings: {servings}
 
+CALCULATION INSTRUCTIONS:
+1. FIRST: Calculate the nutrition for EACH individual ingredient in detailed_breakdown
+2. SECOND: Sum up ALL ingredient values to get the total
+3. THIRD: Divide the total by {servings} to get per_serving values
+
 Return ONLY valid JSON without any markdown formatting, code blocks, or explanations.
 Do not use markdown code blocks (no ```json or ```).
+
+IMPORTANT: The "total" values MUST be the sum of all ingredients in detailed_breakdown.
+The "per_serving" values MUST be total divided by servings.
+
 Provide nutritional analysis in this EXACT JSON format:
 {{
     "total": {{
-        "calories": 850,
-        "protein": 45,
-        "carbs": 95,
-        "fat": 35,
-        "fiber": 18,
-        "sugar": 12,
-        "sodium": 1200
+        "calories": <sum of all ingredient calories>,
+        "protein": <sum of all ingredient protein>,
+        "carbs": <sum of all ingredient carbs>,
+        "fat": <sum of all ingredient fat>,
+        "fiber": <sum of all ingredient fiber>,
+        "sugar": <sum of all ingredient sugar>,
+        "sodium": <sum of all ingredient sodium>
     }},
     "per_serving": {{
-        "calories": 213,
-        "protein": 11.3,
-        "carbs": 23.8,
-        "fat": 8.8,
-        "fiber": 4.5,
-        "sugar": 3,
-        "sodium": 300
+        "calories": <total calories / {servings}>,
+        "protein": <total protein / {servings}>,
+        "carbs": <total carbs / {servings}>,
+        "fat": <total fat / {servings}>,
+        "fiber": <total fiber / {servings}>,
+        "sugar": <total sugar / {servings}>,
+        "sodium": <total sodium / {servings}>
     }},
     "servings": {servings},
     "detailed_breakdown": [
@@ -129,6 +141,24 @@ For each ingredient in detailed_breakdown, show:
 2. Actual quantities used in calculation
 3. Any adjustments made for cooking method
 
+CRITICAL SUMMATION STEP:
+After calculating all individual ingredients in detailed_breakdown:
+1. Add up ALL the calories from every ingredient to get total.calories
+2. Add up ALL the protein from every ingredient to get total.protein
+3. Add up ALL the carbs from every ingredient to get total.carbs
+4. Add up ALL the fat from every ingredient to get total.fat
+5. Add up ALL the fiber from every ingredient to get total.fiber
+6. Add up ALL the sugar from every ingredient to get total.sugar
+7. Add up ALL the sodium from every ingredient to get total.sodium
+
+Then divide each total by {servings} to get per_serving values.
+
+EXAMPLE: If detailed_breakdown has:
+- Ingredient 1: 120 calories, 2g protein
+- Ingredient 2: 25 calories, 1g protein
+- Ingredient 3: 40 calories, 3g protein
+Then total MUST be: 185 calories, 6g protein (NOT zeros!)
+
 CRITICAL: Return ONLY valid JSON, no additional text or explanations outside the JSON structure
 """
         
@@ -147,7 +177,7 @@ CRITICAL: Return ONLY valid JSON, no additional text or explanations outside the
             result_text = response.choices[0].message.content
             
             # Log the raw response for debugging
-            print(f"GPT-4 Raw Response: {result_text[:500]}...")  # First 500 chars for debugging
+            logger.debug(f"Nutrition calculation response length: {len(result_text)}")
             
             # Clean up the text to help with JSON parsing
             result_text = result_text.strip()

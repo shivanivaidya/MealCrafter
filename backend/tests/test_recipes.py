@@ -93,7 +93,7 @@ class TestRecipeCreate:
             json={"title": "Bad Recipe", "raw_text": "invalid"},
             headers=auth_headers
         )
-        assert response.status_code == 400
+        assert response.status_code == 422  # Pydantic validation error
 
 
 class TestRecipeRead:

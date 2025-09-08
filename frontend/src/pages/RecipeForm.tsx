@@ -7,7 +7,7 @@ const RecipeForm: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [inputType, setInputType] = useState<'text' | 'url'>('text');
+  const [inputType, setInputType] = useState<'text' | 'url' | 'image'>('text');
   const [selectedCuisine, setSelectedCuisine] = useState('');
   const [selectedDietaryTags, setSelectedDietaryTags] = useState<string[]>([]);
   const [formData, setFormData] = useState({
@@ -18,6 +18,9 @@ const RecipeForm: React.FC = () => {
     cook_time_minutes: '',
     servings: '',
   });
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [preserveOriginal, setPreserveOriginal] = useState(false);
 
   // Predefined cuisine types
   const cuisineTypes = [
@@ -42,33 +45,92 @@ const RecipeForm: React.FC = () => {
     );
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setError('Image size must be less than 10MB');
+        return;
+      }
+      
+      setSelectedImage(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      // Use URL if in URL mode, otherwise use text
-      const recipeText = inputType === 'url' ? formData.recipe_url : formData.raw_text;
-      
-      if (!recipeText) {
-        setError(inputType === 'url' ? 'Please enter a recipe URL' : 'Please enter recipe text');
-        setLoading(false);
-        return;
+      if (inputType === 'image') {
+        // Handle image upload
+        if (!selectedImage) {
+          setError('Please select an image to upload');
+          setLoading(false);
+          return;
+        }
+
+        const formDataToSend = new FormData();
+        formDataToSend.append('file', selectedImage);
+        
+        // Add optional metadata
+        if (formData.title) formDataToSend.append('title', formData.title);
+        if (selectedCuisine) formDataToSend.append('cuisine_type', selectedCuisine);
+        console.log('DEBUG: preserveOriginal value:', preserveOriginal, 'toString:', preserveOriginal.toString());
+        formDataToSend.append('preserve_original', preserveOriginal.toString());
+        if (selectedDietaryTags.length > 0) {
+          selectedDietaryTags.forEach(tag => formDataToSend.append('dietary_tags', tag));
+        }
+        if (formData.prep_time_minutes) formDataToSend.append('prep_time_minutes', formData.prep_time_minutes);
+        if (formData.cook_time_minutes) formDataToSend.append('cook_time_minutes', formData.cook_time_minutes);
+        if (formData.servings) formDataToSend.append('servings', formData.servings);
+
+        const response = await recipeService.createFromImage(formDataToSend);
+        navigate(`/recipes/${response.id}`);
+      } else {
+        // Handle text or URL input
+        const recipeText = inputType === 'url' ? formData.recipe_url : formData.raw_text;
+        
+        if (!recipeText) {
+          setError(inputType === 'url' ? 'Please enter a recipe URL' : 'Please enter recipe text');
+          setLoading(false);
+          return;
+        }
+
+        const recipeData = {
+          title: formData.title,
+          raw_text: recipeText, // Backend will detect if it's a URL
+          preserve_original: preserveOriginal,
+          cuisine_type: selectedCuisine || undefined,
+          dietary_tags: selectedDietaryTags.length > 0 ? selectedDietaryTags : undefined,
+          prep_time_minutes: formData.prep_time_minutes ? parseInt(formData.prep_time_minutes) : undefined,
+          cook_time_minutes: formData.cook_time_minutes ? parseInt(formData.cook_time_minutes) : undefined,
+          servings: formData.servings ? parseInt(formData.servings) : undefined,
+        };
+
+        const response = await recipeService.create(recipeData);
+        navigate(`/recipes/${response.id}`);
       }
-
-      const recipeData = {
-        title: formData.title,
-        raw_text: recipeText, // Backend will detect if it's a URL
-        cuisine_type: selectedCuisine || undefined,
-        dietary_tags: selectedDietaryTags.length > 0 ? selectedDietaryTags : undefined,
-        prep_time_minutes: formData.prep_time_minutes ? parseInt(formData.prep_time_minutes) : undefined,
-        cook_time_minutes: formData.cook_time_minutes ? parseInt(formData.cook_time_minutes) : undefined,
-        servings: formData.servings ? parseInt(formData.servings) : undefined,
-      };
-
-      const response = await recipeService.create(recipeData);
-      navigate(`/recipes/${response.id}`);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to create recipe');
     } finally {
@@ -140,7 +202,7 @@ Serves: 4`;
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >
-                📝 Enter Recipe Text
+                Enter Recipe Text
               </button>
               <button
                 type="button"
@@ -151,7 +213,18 @@ Serves: 4`;
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >
-                🔗 Import from URL
+                Import from URL
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputType('image')}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  inputType === 'image'
+                    ? 'bg-green-600 text-white shadow-md'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Upload Image
               </button>
             </div>
 
@@ -173,7 +246,7 @@ Serves: 4`;
                   Include ingredients list and cooking instructions. The system will parse this automatically.
                 </p>
               </>
-            ) : (
+            ) : inputType === 'url' ? (
               <>
                 <label htmlFor="recipe_url" className="block text-sm font-medium text-gray-700">
                   Recipe URL
@@ -189,6 +262,72 @@ Serves: 4`;
                 />
                 <p className="mt-2 text-sm text-gray-500">
                   Paste a URL from any recipe website. We'll automatically extract and analyze the recipe.
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="block text-sm font-medium text-gray-700">
+                  Recipe Image
+                </label>
+                {!imagePreview ? (
+                  <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-green-400 transition-colors">
+                    <div className="space-y-1 text-center">
+                      <svg
+                        className="mx-auto h-12 w-12 text-gray-400"
+                        stroke="currentColor"
+                        fill="none"
+                        viewBox="0 0 48 48"
+                      >
+                        <path
+                          d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <div className="flex text-sm text-gray-600">
+                        <label
+                          htmlFor="file-upload"
+                          className="relative cursor-pointer bg-white rounded-md font-medium text-green-600 hover:text-green-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-green-500"
+                        >
+                          <span>Upload a file</span>
+                          <input
+                            id="file-upload"
+                            name="file-upload"
+                            type="file"
+                            className="sr-only"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            required={inputType === 'image'}
+                          />
+                        </label>
+                        <p className="pl-1">or drag and drop</p>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        PNG, JPG, GIF up to 10MB
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1 relative">
+                    <img
+                      src={imagePreview}
+                      alt="Recipe preview"
+                      className="w-full max-h-96 object-contain rounded-md border border-gray-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-2 hover:bg-red-600 shadow-lg"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                <p className="mt-2 text-sm text-gray-500">
+                  Upload a photo of a handwritten recipe or a page from a recipe book. We'll extract and analyze the text automatically.
                 </p>
               </>
             )}
@@ -244,6 +383,23 @@ Serves: 4`;
                 Selected: {selectedDietaryTags.join(', ')}
               </p>
             )}
+          </div>
+
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={preserveOriginal}
+                onChange={(e) => setPreserveOriginal(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Preserve Original Recipe Text
+              </span>
+            </label>
+            <p className="mt-1 text-xs text-gray-600 ml-6">
+              When checked, the recipe instructions will be kept exactly as written without any modifications or improvements
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -303,7 +459,11 @@ Serves: 4`;
               disabled={loading}
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
             >
-              {loading ? (inputType === 'url' ? 'Fetching & Analyzing...' : 'Creating...') : 'Create Recipe'}
+              {loading ? (
+                inputType === 'url' ? 'Fetching & Analyzing...' : 
+                inputType === 'image' ? 'Processing Image...' : 
+                'Creating...'
+              ) : 'Create Recipe'}
             </button>
           </div>
         </form>

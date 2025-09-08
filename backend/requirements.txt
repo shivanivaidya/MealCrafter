@@ -22,8 +22,10 @@ pydantic-settings==2.1.0
 python-dotenv==1.0.0
 openai==1.35.0
 
-# OCR & Video Processing (for later)
+# OCR & Image Processing
 pytesseract==0.3.10
+Pillow==10.1.0
+opencv-python==4.8.1.78
 yt-dlp==2023.11.16
 openai-whisper==20231117
 

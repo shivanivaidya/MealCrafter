@@ -135,7 +135,8 @@ class TestURLRecipeScraper:
     @patch('app.services.url_scraper.requests.get')
     def test_scrape_network_error(self, mock_get, scraper):
         """Test handling network errors"""
-        mock_get.side_effect = Exception("Network error")
+        import requests
+        mock_get.side_effect = requests.RequestException("Network error")
         
         with pytest.raises(ValueError, match="Failed to fetch URL"):
             scraper.scrape_recipe("https://example.com/recipe")

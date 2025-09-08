@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -12,7 +12,10 @@ class RecipeBase(BaseModel):
     servings: Optional[int] = None
 
 class RecipeCreate(RecipeBase):
-    @validator('raw_text')
+    preserve_original: bool = False
+    
+    @field_validator('raw_text')
+    @classmethod
     def validate_raw_text(cls, v):
         if len(v.strip()) < 10:
             raise ValueError('Recipe text must be at least 10 characters')

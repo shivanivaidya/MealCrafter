@@ -144,6 +144,10 @@ class URLRecipeScraper:
         recipe_text.append("## Instructions:\n")
         instructions = data.get('recipeInstructions', [])
         
+        # Handle case where instructions is a single string
+        if isinstance(instructions, str):
+            instructions = [instructions]
+        
         for i, instruction in enumerate(instructions, 1):
             instruction_text = ""
             
@@ -223,7 +227,8 @@ class URLRecipeScraper:
             'img.recipe-photo',
             '[class*="recipe"] img',
             'article img',
-            'main img'
+            'main img',
+            'img'  # Fallback to any image tag
         ]:
             img_elem = soup.select_one(selector)
             if img_elem:

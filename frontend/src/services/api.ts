@@ -59,6 +59,15 @@ export const recipeService = {
     return response.data;
   },
   
+  createFromImage: async (formData: FormData) => {
+    const response = await api.post('/recipes/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  
   getAll: async () => {
     const response = await api.get('/recipes/');
     return response.data;
