@@ -3,8 +3,41 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
 import logging
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
+
+async def store_image_locally(image_url: str, recipe_id: Optional[int] = None) -> Optional[str]:
+    """
+    Download and store external images locally to avoid CDN expiration issues.
+    Returns the local image path if successful, None otherwise.
+    """
+    if not image_url:
+        return None
+    
+    logger.info(f"Storing image locally: {image_url}")
+    
+    # Skip if it's already a local URL
+    if image_url.startswith('/static/') or image_url.startswith('http://localhost'):
+        logger.info("Already a local URL, returning as-is")
+        return image_url
+    
+    # Check if this is an external URL that should be stored locally
+    # Store all external URLs locally (anything starting with http/https)
+    if image_url.startswith(('http://', 'https://')):
+        try:
+            local_path = await image_storage.download_and_store_image(image_url, recipe_id)
+            if local_path:
+                logger.info(f"Successfully stored image locally: {local_path}")
+                return local_path
+            else:
+                logger.warning(f"Failed to store image locally, keeping original URL: {image_url}")
+                return image_url
+        except Exception as e:
+            logger.error(f"Error storing image locally: {e}")
+            return image_url
+    
+    return image_url
 
 from app.database import get_db, get_chroma_collection
 from app.models.recipe import Recipe
@@ -16,6 +49,9 @@ from app.services.nutrition_ai import AINutritionCalculator
 from app.services.health_analyzer_ai import AIHealthAnalyzer
 from app.services.url_scraper import URLRecipeScraper
 from app.services.ocr_service import OCRService
+from app.services.video_extractor import VideoRecipeExtractor
+from app.services.food_image_search import FoodImageSearch
+from app.services.image_storage import image_storage
 
 router = APIRouter()
 
@@ -35,30 +71,87 @@ async def create_recipe(
     url_title = None
     image_url = None
     if recipe_text.startswith(('http://', 'https://', 'www.')):
-        # It's a URL, scrape it first
-        url_scraper = URLRecipeScraper()
-        try:
-            scraped_data = url_scraper.scrape_recipe(recipe_text)
-            recipe_text = scraped_data['text']
-            # Extract title from scraped data if available
-            if scraped_data.get('structured_data') and scraped_data['structured_data'].get('title'):
-                url_title = scraped_data['structured_data']['title']
-            # Extract image URL if available
-            image_url = scraped_data.get('image_url')
-            logger.info(f"Successfully scraped recipe from URL. Title: {url_title}, Image: {image_url}")
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to fetch recipe from URL: {str(e)}"
-            )
+        # Check if it's a video URL
+        video_platforms = ['youtube.com', 'youtu.be', 'instagram.com', 'tiktok.com', 
+                          'facebook.com', 'fb.watch', 'vimeo.com']
+        is_video = any(platform in recipe_text.lower() for platform in video_platforms)
+        
+        if is_video:
+            # It's a video URL - extract video content
+            try:
+                video_extractor = VideoRecipeExtractor()
+                video_data = video_extractor.extract_from_url(recipe_text)
+                
+                # Use video title and thumbnail
+                url_title = video_data.get('title')
+                image_url = video_data.get('thumbnail')
+                
+                # If we have a thumbnail but it might show a person instead of food,
+                # we'll let the AI decide later if we need a food image instead
+                needs_food_image = True  # Flag for potential image replacement
+                
+                # Use the extracted recipe text or full text
+                extracted_text = video_data.get('recipe_text', video_data.get('full_text', ''))
+                
+                if not extracted_text or len(extracted_text.strip()) < 10:
+                    logger.error(f"No content extracted from video URL: {recipe_text}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Could not extract any content from the video. The video may be unavailable or restricted."
+                    )
+                
+                # Add platform info to the recipe text
+                platform = video_data.get('platform', 'video')
+                author = video_data.get('author', '')
+                if author:
+                    recipe_text = f"[Video Recipe from {platform} by {author}]\n\n{extracted_text}"
+                else:
+                    recipe_text = extracted_text
+                    
+                logger.info(f"Extracted video recipe from {platform}: {url_title}, content length: {len(extracted_text)}")
+                
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions
+            except Exception as e:
+                logger.error(f"Failed to extract video content: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to extract recipe from video: {str(e)}"
+                )
+        else:
+            # It's a regular URL, scrape it
+            url_scraper = URLRecipeScraper()
+            try:
+                scraped_data = url_scraper.scrape_recipe(recipe_text)
+                recipe_text = scraped_data['text']
+                # Extract title from scraped data if available
+                if scraped_data.get('structured_data') and scraped_data['structured_data'].get('title'):
+                    url_title = scraped_data['structured_data']['title']
+                # Extract image URL if available
+                image_url = scraped_data.get('image_url')
+                logger.info(f"Successfully scraped recipe from URL. Title: {url_title}, Image: {image_url}")
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to fetch recipe from URL: {str(e)}"
+                )
     
     try:
         logger.debug(f"Create recipe: preserve_original={recipe.preserve_original}, type={'URL' if recipe_text.startswith(('http://', 'https://')) else 'Text'}")
         
+        # Determine if this is video content
+        is_video = recipe.raw_text.strip().startswith(('http://', 'https://', 'www.')) and any(
+            platform in recipe.raw_text.lower() 
+            for platform in ['youtube.com', 'youtu.be', 'instagram.com', 'tiktok.com', 'facebook.com', 'fb.watch', 'vimeo.com']
+        )
+        
+        logger.info(f"Is video content: {is_video}, URL: {recipe.raw_text[:50] if is_video else 'N/A'}")
+        
         # Parse recipe with AI (either from URL or direct text)
         parsed = ai_parser.parse_recipe_text(
             recipe_text,
-            preserve_original=recipe.preserve_original
+            preserve_original=recipe.preserve_original,
+            is_video_content=is_video
         )
     except ValueError as e:
         raise HTTPException(
@@ -90,9 +183,35 @@ async def create_recipe(
     final_cuisine = recipe.cuisine_type or parsed.cuisine_type
     final_dietary_tags = recipe.dietary_tags if recipe.dietary_tags else parsed.dietary_tags
     
-    # Prioritize URL title, then user-provided title, then AI-parsed title
-    final_title = url_title or recipe.title or parsed.title
+    # For video content, prioritize AI-parsed title as it's cleaned up
+    # Otherwise: URL title, then user-provided title, then AI-parsed title
+    if is_video:
+        # The AI parser now extracts clean titles from video content
+        final_title = parsed.title or url_title or recipe.title
+    else:
+        final_title = url_title or recipe.title or parsed.title
     
+    # For videos, use the actual video thumbnail from Instagram/TikTok
+    if is_video:
+        if image_url:
+            # Use the actual thumbnail from the video - this is what users expect to see
+            logger.info(f"Using video thumbnail: {image_url}")
+        else:
+            # No thumbnail available, search for a food image as fallback
+            logger.info(f"No video thumbnail available, searching for food image for: {final_title}")
+            image_search = FoodImageSearch()
+            
+            # Try to find a real food image
+            food_image_url = image_search.search_food_image(final_title)
+            
+            # If no image found, use a fallback
+            if not food_image_url:
+                food_image_url = image_search.get_fallback_image(final_title)
+            
+            logger.info(f"Using searched food image: {food_image_url}")
+            image_url = food_image_url
+    
+    # First create the recipe without the image
     db_recipe = Recipe(
         user_id=current_user.id,
         title=final_title,
@@ -108,12 +227,23 @@ async def create_recipe(
         cook_time_minutes=recipe.cook_time_minutes,
         servings=parsed.servings,
         nutrition_data=nutrition_data,
-        image_url=image_url
+        image_url=None  # Will be updated after storing image locally
     )
     
     db.add(db_recipe)
     db.commit()
     db.refresh(db_recipe)
+    
+    # Now store the image locally with the recipe ID and update the record
+    if image_url:
+        local_image_url = await store_image_locally(image_url, db_recipe.id)
+        if local_image_url:
+            db_recipe.image_url = local_image_url
+            db.commit()
+            db.refresh(db_recipe)
+            logger.info(f"Final image URL saved: {local_image_url}")
+        else:
+            logger.warning("Failed to store image locally, recipe saved without image")
     
     collection = get_chroma_collection()
     

@@ -25,16 +25,22 @@ class AIRecipeParser:
         else:
             self.client = None
             
-    def parse_recipe_text(self, text: str, is_ocr_text: bool = False, preserve_original: bool = False) -> ParsedRecipe:
+    def parse_recipe_text(self, text: str, is_ocr_text: bool = False, preserve_original: bool = False, is_video_content: bool = False) -> ParsedRecipe:
         """Parse recipe using OpenAI API
         
         Args:
             text: Recipe text to parse
             is_ocr_text: Whether the text came from OCR (may have errors)
             preserve_original: Whether to preserve original text without modifications
+            is_video_content: Whether the text came from a video transcript
         """
         
         logger.debug(f"Recipe parser: preserve_original={preserve_original}")
+        
+        # Log video content for debugging
+        if is_video_content:
+            logger.info(f"Parsing video content, text length: {len(text)}")
+            logger.debug(f"First 500 chars of video content: {text[:500]}")
         
         if preserve_original:
             logger.debug("Using _parse_preserve_original method")
@@ -43,7 +49,7 @@ class AIRecipeParser:
         if not self.client:
             raise ValueError("OpenAI API key is required for recipe parsing")
         
-        return self._parse_with_ai(text, is_ocr_text)
+        return self._parse_with_ai(text, is_ocr_text, is_video_content)
     
     def _parse_preserve_original(self, text: str) -> ParsedRecipe:
         """Parse recipe preserving original text exactly as written"""
@@ -169,8 +175,11 @@ class AIRecipeParser:
             # Fall back to basic parser
             return self._parse_basic(text)
     
-    def _parse_with_ai(self, text: str, is_ocr_text: bool = False) -> ParsedRecipe:
+    def _parse_with_ai(self, text: str, is_ocr_text: bool = False, is_video_content: bool = False) -> ParsedRecipe:
         """Use OpenAI to intelligently parse the recipe"""
+        
+        # Check if this is Instagram content with limited extraction
+        is_instagram_fallback = "[Instagram Post/Reel" in text and "authentication requirements" in text
         
         ocr_context = """
         This text was extracted from an image using OCR and may contain errors such as:
@@ -182,8 +191,57 @@ class AIRecipeParser:
         Please correct obvious errors and interpret the recipe intelligently.
         """ if is_ocr_text else ""
         
+        instagram_context = """
+        IMPORTANT: This is Instagram content. Extract ONLY what is actually in the text.
+        
+        1. Do NOT generate or invent any ingredients or instructions
+        2. Extract ONLY the recipe information that is explicitly mentioned
+        3. If the content is incomplete or missing information, return only what is available
+        4. If no recipe information can be found, return an error
+        
+        Be strict: Only extract, never generate or assume.
+        """ if is_instagram_fallback else ""
+        
+        video_context = """
+        This content comes from a video (transcript and/or description). 
+        
+        CRITICAL EXTRACTION RULES:
+        1. Extract ALL ingredients mentioned ANYWHERE in the text (description, transcript, captions)
+        2. Extract ALL cooking steps/instructions in the order they appear
+        3. Look for ingredients in multiple places:
+           - Video description (often has complete ingredient list)
+           - Transcript (spoken ingredients during cooking)
+           - On-screen text or captions
+           - Comments or pinned comments (sometimes contain full recipe)
+        
+        TITLE EXTRACTION:
+        - Extract the actual dish name (e.g., "Blackened Shrimp Tacos", "Avocado Salad")
+        - Remove creator names, brand names, channel names
+        - Keep it simple and clear (3-5 words max)
+        
+        INGREDIENTS:
+        - Extract EVERY ingredient mentioned, even if scattered throughout
+        - If quantities are mentioned, use them exactly
+        - If no quantity given, provide reasonable estimates based on the dish
+        - Common patterns to look for:
+          * "You'll need..." followed by ingredients
+          * "Ingredients:" section in description
+          * Items mentioned while cooking ("add the shrimp", "pour in the sauce")
+        
+        INSTRUCTIONS:
+        - Extract all cooking steps mentioned
+        - Convert casual speech to clear instructions
+        - Keep the sequence of steps as shown/described
+        - Include important details like cooking times and temperatures
+        
+        IMPORTANT: This is extraction, not generation. Extract what's actually in the content.
+        If the content is incomplete, extract what's available and note what's missing.
+        """ if is_video_content and not is_instagram_fallback else ""
+        
         prompt = f"""You are a recipe parser. Extract the recipe information from the following text.
         {ocr_context}
+        {instagram_context}
+        {video_context}
         
         The recipe might have ingredients and instructions mixed together (like "Add 2 cups flour") 
         or separated into sections. Handle both formats.
@@ -209,6 +267,16 @@ class AIRecipeParser:
         Important:
         - Extract ALL ingredients mentioned, even if mixed within instructions
         - NEVER skip any ingredient - include every single one mentioned in the recipe
+        - Scan the ENTIRE text multiple times to find all ingredients:
+          * Check the beginning for ingredient lists
+          * Check instructions for ingredients mentioned during cooking
+          * Check descriptions and notes for additional ingredients
+        - Common places ingredients hide:
+          * "Season with salt and pepper" = salt and pepper are ingredients
+          * "Garnish with cilantro" = cilantro is an ingredient
+          * "Serve with rice" = rice is an ingredient
+          * "Cook in oil" = oil is an ingredient
+          * "Add water to cover" = water is an ingredient
         - Pay special attention to compound ingredients like "frozen mixed vegetables"
         - Include optional ingredients marked with "optional:" or in parentheses
         - Combine duplicate ingredients (e.g., if oil is mentioned twice, sum the quantities)

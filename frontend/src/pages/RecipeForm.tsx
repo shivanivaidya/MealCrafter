@@ -213,7 +213,7 @@ Serves: 4`;
                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >
-                Import from URL
+                Import from URL/Video
               </button>
               <button
                 type="button"
@@ -249,7 +249,7 @@ Serves: 4`;
             ) : inputType === 'url' ? (
               <>
                 <label htmlFor="recipe_url" className="block text-sm font-medium text-gray-700">
-                  Recipe URL
+                  Recipe URL or Video Link
                 </label>
                 <input
                   type="url"
@@ -258,10 +258,10 @@ Serves: 4`;
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
                   value={formData.recipe_url}
                   onChange={(e) => setFormData({ ...formData, recipe_url: e.target.value })}
-                  placeholder="https://www.example.com/recipe-page"
+                  placeholder="https://youtube.com/watch?v=... or https://www.example.com/recipe"
                 />
                 <p className="mt-2 text-sm text-gray-500">
-                  Paste a URL from any recipe website. We'll automatically extract and analyze the recipe.
+                  Paste a URL from any recipe website or video platform (YouTube, Instagram, TikTok, etc.). We'll automatically extract and analyze the recipe.
                 </p>
               </>
             ) : (

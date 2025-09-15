@@ -66,6 +66,22 @@ const RecipeDetail: React.FC = () => {
     return 'text-red-600';
   };
 
+  const getImageUrl = (imageUrl?: string) => {
+    if (!imageUrl) return null;
+    
+    // If it's already a full URL, return as is
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
+    
+    // If it's a relative URL for API or static files, prepend the API base URL
+    if (imageUrl.startsWith('/api/') || imageUrl.startsWith('/static/')) {
+      return `http://localhost:8000${imageUrl}`;
+    }
+    
+    return imageUrl;
+  };
+
   const convertToMetric = (quantity: string | number | undefined, unit: string | undefined) => {
     if (!quantity || !unit) return { quantity, unit };
     
@@ -288,10 +304,15 @@ const RecipeDetail: React.FC = () => {
           {recipe.image_url && (
             <div className="mb-6 rounded-lg overflow-hidden">
               <img 
-                src={recipe.image_url} 
+                src={getImageUrl(recipe.image_url) || ''} 
                 alt={recipe.title}
-                className="w-full h-96 object-cover rounded-lg shadow-md"
+                className="w-full h-64 md:h-80 object-cover rounded-lg shadow-md"
+                style={{
+                  imageRendering: 'crisp-edges',
+                  maxHeight: '400px'
+                }}
                 onError={(e) => {
+                  console.error('Failed to load image:', getImageUrl(recipe.image_url));
                   // Hide image if it fails to load
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}
