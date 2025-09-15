@@ -4,17 +4,14 @@ Extracts recipe content from YouTube, Instagram, and other video platforms
 """
 import re
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
-import requests
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api.formatters import TextFormatter
     TRANSCRIPT_AVAILABLE = True
 except ImportError:
     TRANSCRIPT_AVAILABLE = False
     YouTubeTranscriptApi = None
-    TextFormatter = None
 import yt_dlp
 
 logger = logging.getLogger(__name__)
@@ -405,20 +402,6 @@ Alternative: Use recipe videos from YouTube or TikTok which don't require authen
         
         # If no structured recipe found, return None
         return None
-    
-    def _extract_timestamps(self, text: str) -> List[Dict[str, Any]]:
-        """Extract timestamps from video description or comments"""
-        timestamp_pattern = r'(\d{1,2}:\d{2}(?::\d{2})?)\s*[-–]\s*(.+?)(?:\n|$)'
-        matches = re.findall(timestamp_pattern, text)
-        
-        timestamps = []
-        for time, description in matches:
-            timestamps.append({
-                'time': time,
-                'description': description.strip()
-            })
-        
-        return timestamps
     
     def _get_best_thumbnail(self, metadata: Dict[str, Any]) -> str:
         """

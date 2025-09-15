@@ -240,27 +240,6 @@ class TestVideoRecipeExtractor:
         
         assert result is None
     
-    def test_extract_timestamps(self):
-        """Test extracting timestamps from video description"""
-        extractor = VideoRecipeExtractor()
-        
-        text = """
-        Recipe timestamps:
-        0:00 - Introduction
-        1:30 - Preparing ingredients
-        3:45 - Mixing the dough
-        5:20 - Baking
-        7:00 - Final result
-        """
-        
-        timestamps = extractor._extract_timestamps(text)
-        
-        assert len(timestamps) == 5
-        assert timestamps[0]['time'] == '0:00'
-        assert timestamps[0]['description'] == 'Introduction'
-        assert timestamps[2]['time'] == '3:45'
-        assert timestamps[2]['description'] == 'Mixing the dough'
-    
     @patch('app.services.video_extractor.YouTubeTranscriptApi')
     def test_extract_video_error_handling(self, mock_transcript_api):
         """Test error handling when video extraction fails"""
